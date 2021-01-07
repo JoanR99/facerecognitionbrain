@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
 import Particles from 'react-particles-js';
-import Clarifai from 'clarifai';
 import Navigation from './components/Navigation/Navigation';
 import Logo from './components/Logo/Logo';
 import Rank from './components/Rank/Rank';
@@ -9,10 +8,6 @@ import FaceRecognition from './components/FaceRecognition/FaceRecognition';
 import Signin from './components/Signin/Signin';
 import Register from './components/Register/Register';
 import './App.css';
-
-const app = new Clarifai.App({
-	apiKey: 'c956288478554f6bbeb25b86dd84d296',
-});
 
 const particlesOptions = {
 	particles: {
@@ -26,17 +21,33 @@ const particlesOptions = {
 	},
 };
 
+const initialState = {
+	input: '',
+	imageURL: '',
+	box: {},
+	route: 'signin',
+	user: {
+		id: '',
+		name: '',
+		entries: 0,
+	},
+};
+
 class App extends Component {
 	constructor(props) {
 		super(props);
-		this.state = {
-			input: '',
-			imageURL: '',
-			box: {},
-			route: 'signin',
-			isSignedIn: false,
-		};
+		this.state = initialState;
 	}
+
+	loadUser = (data) => {
+		this.setState({
+			user: {
+				id: data.id,
+				name: data.name,
+				entries: data.entries,
+			},
+		});
+	};
 
 	calculateFaceLocation = (coords) => {
 		const clarifaiFace =
@@ -62,21 +73,39 @@ class App extends Component {
 
 	onButtonSubmit = () => {
 		this.setState({ imageURL: this.state.input });
-		app.models
-			.predict(Clarifai.FACE_DETECT_MODEL, this.state.input)
-			.then((response) =>
-				this.displayFaceBox(this.calculateFaceLocation(response))
-			)
+		fetch('https://whispering-tor-13057.herokuapp.com/imageUrl', {
+			method: 'post',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				input: this.state.input,
+			}),
+		})
+			.then((response) => response.json())
+			.then((response) => {
+				if (response) {
+					fetch('https://whispering-tor-13057.herokuapp.com/image', {
+						method: 'put',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({
+							id: this.state.user.id,
+						}),
+					})
+						.then((response) => response.json())
+						.then((count) => {
+							this.setState(Object.assign(this.state.user, { entries: count }));
+						})
+						.catch(console.log);
+				}
+				return this.displayFaceBox(this.calculateFaceLocation(response));
+			})
 			.catch((err) => console.log(err));
 	};
 
 	onRouteChange = (route) => {
-		if (this.state.route === 'singnout') {
-			this.setState({ isSignedIn: false });
-		} else if (this.state.route === 'home') {
-			this.setState({ isSignedIn: true });
-		}
 		this.setState({ route: route });
+		if (this.state.route === 'signin' || this.state.route === 'register') {
+			this.setState({ ...initialState, route: route });
+		}
 	};
 	render() {
 		return (
@@ -84,12 +113,15 @@ class App extends Component {
 				<Particles params={particlesOptions} className="particles" />
 				<Navigation
 					onRouteChange={this.onRouteChange}
-					isSignedIn={this.state.isSignedIn}
+					route={this.state.route}
 				/>
 				{this.state.route === 'home' ? (
 					<div>
 						<Logo />
-						<Rank />
+						<Rank
+							name={this.state.user.name}
+							entries={this.state.user.entries}
+						/>
 						<ImageLinkForm
 							onInputChanges={this.onInputChanges}
 							onButtonSubmit={this.onButtonSubmit}
@@ -104,9 +136,12 @@ class App extends Component {
 						)}
 					</div>
 				) : this.state.route === 'signin' ? (
-					<Signin onRouteChange={this.onRouteChange} />
+					<Signin onRouteChange={this.onRouteChange} loadUser={this.loadUser} />
 				) : (
-					<Register onRouteChange={this.onRouteChange} />
+					<Register
+						loadUser={this.loadUser}
+						onRouteChange={this.onRouteChange}
+					/>
 				)}
 			</div>
 		);
